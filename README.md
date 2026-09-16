@@ -12,8 +12,11 @@ With Homebrew:
 
 ```sh
 brew tap spashii/browserpicker https://github.com/spashii/browserpicker
+brew trust spashii/browserpicker
 brew install --cask browserpicker
 ```
+
+The cask clears the quarantine flag for you, so the app opens on the first try.
 
 Or download `BrowserPicker-<version>.zip` from the [latest release](https://github.com/spashii/browserpicker/releases/latest), unzip, move `Browser Picker.app` to `/Applications`, then clear the quarantine flag once. The app is signed ad hoc, not notarised, so macOS would otherwise refuse to open it:
 
