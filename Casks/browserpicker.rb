@@ -1,6 +1,6 @@
 cask "browserpicker" do
   version "0.1.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "e7e3f4134d7290f0e2699a717cd7383baf97d0b160b5251c05e6f002cae5ee8b"
 
   url "https://github.com/spashii/browserpicker/releases/download/v#{version}/BrowserPicker-#{version}.zip"
   name "Browser Picker"
