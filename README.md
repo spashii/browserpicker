@@ -1,8 +1,8 @@
 # Browser Picker
 
-A small macOS app that sits in for your default browser. Click a link anywhere and a panel asks where it should go: which browser, and for Chromium browsers, which profile.
+A small macOS app that sits in for your default browser. Click a link anywhere and a panel asks where it should go: which browser, and for Chromium browsers and Firefox, which profile.
 
-Profiles are the point. Brave and Chrome keep one login per profile, and no other picker lets you say "work Brave" versus "personal Brave" from the same click.
+Profiles are the point. Brave, Chrome and Firefox keep one login per profile, and no other picker lets you say "work Brave" versus "personal Brave" from the same click.
 
 <img src="Resources/AppIcon.iconset/icon_128x128.png" width="64" alt="">
 
@@ -59,7 +59,7 @@ Everything lives in `~/.config/browserpicker/config.json`. The app writes it on 
 - `name` renames a row. `key` is the shortcut. `hidden` drops it from the panel.
 - `rules` skip the panel for a host and its subdomains. The longest matching host wins.
 
-Target ids are the bundle id, plus `#<profile directory>` for Chromium profiles.
+Target ids are the bundle id, plus `#<profile directory>` for Chromium and Firefox profiles.
 
 ## Build from source
 

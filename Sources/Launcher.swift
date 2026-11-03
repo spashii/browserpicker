@@ -1,14 +1,13 @@
 import AppKit
 
 enum Launcher {
-    /// Chromium only honours --profile-directory on a fresh process, so profile targets go
-    /// through `open -n`: the new process hands the URL to the running browser, which opens
-    /// it in the named profile. Everything else takes the plain path.
+    /// Chromium and Firefox only honour their profile flag on a fresh process, so profile
+    /// targets go through `open -n`: the new process hands the URL to the browser already
+    /// running that profile, or becomes it. Everything else takes the plain path.
     static func open(_ url: URL, in target: Target) {
         var arguments: [String]
-        if let profile = target.profileDirectory {
-            arguments = ["-n", "-a", target.appURL.path, "--args",
-                         "--profile-directory=\(profile)", url.absoluteString]
+        if !target.profileArguments.isEmpty {
+            arguments = ["-n", "-a", target.appURL.path, "--args"] + target.profileArguments + [url.absoluteString]
         } else {
             arguments = ["-a", target.appURL.path, url.absoluteString]
         }
