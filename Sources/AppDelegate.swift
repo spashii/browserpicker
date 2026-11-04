@@ -1,8 +1,16 @@
 import AppKit
 import Sparkle
 
+/// A link waiting for the panel, with the app it was clicked in.
+private struct Link {
+    let url: URL
+    let source: String?
+    /// False for the "Try the picker" probe, which should not teach the model.
+    var learn = true
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverDelegate, SPUUpdaterDelegate {
-    private var queue: [URL] = []
+    private var queue: [Link] = []
     private var picker: PickerController?
     private var settings: SettingsWindowController?
     private var handledURL = false
@@ -35,10 +43,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
 
     func application(_ application: NSApplication, open urls: [URL]) {
         handledURL = true
+        let source = Self.sender()
         // The default browser also gets .html files, so a double-clicked page arrives here
         // as a file URL next to the web links.
-        queue.append(contentsOf: urls.filter { $0.isFileURL || $0.scheme == "http" || $0.scheme == "https" })
+        queue.append(contentsOf: urls.filter { $0.isFileURL || $0.scheme == "http" || $0.scheme == "https" }
+            .map { Link(url: $0, source: source) })
         next()
+    }
+
+    /// The app the link was clicked in. Slack and Mail say a lot about which identity
+    /// a link belongs to; nil when macOS does not pass a sender along.
+    private static func sender() -> String? {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              let pid = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value,
+              pid > 0, pid != ProcessInfo.processInfo.processIdentifier
+        else { return nil }
+        return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
@@ -50,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
         if settings == nil {
             settings = SettingsWindowController(onTry: { [weak self] in
                 if let probe = URL(string: "https://example.com/what-this-looks-like") {
-                    self?.queue.append(probe)
+                    self?.queue.append(Link(url: probe, source: nil, learn: false))
                     self?.next()
                 }
             }, onCheckForUpdates: { [weak self] in
@@ -62,7 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
 
     private func next() {
         guard picker == nil, !queue.isEmpty else { return }
-        let url = queue.removeFirst()
+        let link = queue.removeFirst()
+        let url = link.url
         let choices = Store.choices()
 
         guard !choices.isEmpty else {
@@ -75,7 +96,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
             return
         }
 
-        let controller = PickerController(url: url, choices: choices) { [weak self] choice in
+        let guess = Store.guess(for: url, source: link.source, in: choices)
+        let controller = PickerController(url: url, choices: choices, highlight: guess.index,
+                                          countdown: Store.countdown) { [weak self] choice, via in
+            if link.learn {
+                Store.record(Pick(time: Date(), url: url.absoluteString, source: link.source,
+                                  guess: choices[guess.index].target.id, confidence: guess.confidence,
+                                  target: choice?.target.id, via: via))
+            }
             if let choice { self?.launch(url, in: choice.target) }
             self?.picker = nil
             self?.finished()
@@ -132,7 +160,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
     }
 
     /// No picker open and no link being routed. Called after each step that can end the work
-    /// on a link, so a waiting update installs at the first quiet moment.
+    /// on a link, so a waiting update installs at the first quiet moment. An open panel is
+    /// never quiet, also while its countdown runs: the countdown is about to open a link, and
+    /// `picker` stays set until the panel has closed and handed its link to `launch`.
     private func installIfQuiet() {
         guard let install = pendingInstall, picker == nil, queue.isEmpty, opening == 0 else { return }
         pendingInstall = nil
