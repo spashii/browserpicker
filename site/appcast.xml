@@ -6,5 +6,14 @@
     <description>Updates for Browser Picker.</description>
     <language>en</language>
     <!-- Tools/release.sh adds each release below this line, newest first. -->
+    <item>
+      <title>Version 0.3.0</title>
+      <link>https://github.com/spashii/browserpicker/releases/tag/v0.3.0</link>
+      <pubDate>Wed, 04 Nov 2026 11:27:17 +0000</pubDate>
+      <sparkle:version>0.3.0</sparkle:version>
+      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/spashii/browserpicker/releases/download/v0.3.0/BrowserPicker-0.3.0.zip" sparkle:edSignature="kz8ze8WD/lCudGKcguU/KKsXMI1taSs6D9k5jUB1CndRkwps1HT7OUBWDMqc0qoQLOVlQRURbhb27IMeoEqLAA==" length="1416634" type="application/octet-stream"/>
+    </item>
   </channel>
 </rss>
