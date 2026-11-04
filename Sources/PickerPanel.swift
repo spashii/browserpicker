@@ -126,13 +126,16 @@ final class PickerController: NSObject {
         content.onKey = { [weak self] event in self?.handle(event) ?? false }
         panel.contentView = content
 
-        let host = NSTextField(labelWithString: url.host ?? url.absoluteString)
+        // A file has no host: show its name, and the folder it sits in below.
+        let host = NSTextField(labelWithString: url.isFileURL ? url.lastPathComponent : url.host ?? url.absoluteString)
         host.font = .systemFont(ofSize: 13, weight: .semibold)
         host.lineBreakMode = .byTruncatingTail
         host.frame = NSRect(x: 16, y: height - 26, width: Metric.width - 32, height: 17)
         content.addSubview(host)
 
-        var rest = url.path
+        var rest = url.isFileURL
+            ? (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+            : url.path
         if let query = url.query { rest += "?" + query }
         let detail = NSTextField(labelWithString: rest.isEmpty ? url.scheme ?? "" : rest)
         detail.font = .systemFont(ofSize: 11)

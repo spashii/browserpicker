@@ -26,7 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
 
     func application(_ application: NSApplication, open urls: [URL]) {
         handledURL = true
-        queue.append(contentsOf: urls.filter { $0.scheme == "http" || $0.scheme == "https" })
+        // The default browser also gets .html files, so a double-clicked page arrives here
+        // as a file URL next to the web links.
+        queue.append(contentsOf: urls.filter { $0.isFileURL || $0.scheme == "http" || $0.scheme == "https" })
         next()
     }
 
