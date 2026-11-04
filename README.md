@@ -28,13 +28,16 @@ Open the app once. It offers to make itself the default browser and lists everyt
 
 ## Use
 
-Click a link. The panel shows every browser and profile with a key next to it.
+Click a link. The panel shows every browser and profile with a key next to it, with one row already highlighted: where it thinks the link goes. A bar drains under that row and the link opens there after five seconds.
 
 - Press the key, or arrow down and press Return, to open the link there.
+- Any key, or moving to another row, stops the countdown and the panel waits for you.
 - Escape closes the panel without opening anything.
 - Command-C copies the link instead of opening it.
 
-Every choice is per link. Nothing is remembered unless you add a rule.
+The guess is learned from your own picks: the host, its parent domains, the first two path segments (so `github.com/<org>` can go to a different profile than `github.com/<other-org>`), the words in the link and the app you clicked it in. What you picked last at the most specific matching place counts most. When it is unsure it highlights your `default`, or the top row.
+
+Every pick is appended to `~/.config/browserpicker/picks.jsonl`, and the guess is relearned from that file on every link. There is no model file. Delete the log to start over.
 
 ## Configure
 
@@ -42,6 +45,8 @@ Everything lives in `~/.config/browserpicker/config.json`. The app writes it on 
 
 ```json
 {
+  "default": "com.brave.Browser#Default",
+  "countdown": 5,
   "rules": [
     { "host": "example.com", "target": "com.brave.Browser#Default" },
     { "host": "github.com", "target": "com.google.Chrome#Default" }
@@ -58,6 +63,8 @@ Everything lives in `~/.config/browserpicker/config.json`. The app writes it on 
 - `targets` order is the panel order. New browsers and profiles are added next to their app.
 - `name` renames a row. `key` is the shortcut. `hidden` drops it from the panel.
 - `rules` skip the panel for a host and its subdomains. The longest matching host wins.
+- `default` is highlighted when the guess is unsure. Without it, the top row.
+- `countdown` is the seconds before the highlighted row opens by itself. `0` turns it off.
 
 Target ids are the bundle id, plus `#<profile directory>` for Chromium and Firefox profiles.
 
@@ -70,6 +77,8 @@ Needs the Xcode command line tools and nothing else.
 ```
 
 That builds a universal binary into `build/`, copies it to `/Applications` and registers it with Launch Services.
+
+`Tools/ModelCheck.swift` checks the guessing model without the app: its behaviour cases, and a replay of a `picks.jsonl` that counts how often the countdown would have opened the wrong place. The header has the commands.
 
 ## Release
 

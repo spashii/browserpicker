@@ -1,7 +1,15 @@
 import AppKit
 
+/// A link waiting for the panel, with the app it was clicked in.
+private struct Link {
+    let url: URL
+    let source: String?
+    /// False for the "Try the picker" probe, which should not teach the model.
+    var learn = true
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var queue: [URL] = []
+    private var queue: [Link] = []
     private var picker: PickerController?
     private var settings: SettingsWindowController?
     private var handledURL = false
@@ -16,8 +24,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         handledURL = true
-        queue.append(contentsOf: urls.filter { $0.scheme == "http" || $0.scheme == "https" })
+        let source = Self.sender()
+        queue.append(contentsOf: urls.filter { $0.scheme == "http" || $0.scheme == "https" }
+            .map { Link(url: $0, source: source) })
         next()
+    }
+
+    /// The app the link was clicked in. Slack and Mail say a lot about which identity
+    /// a link belongs to; nil when macOS does not pass a sender along.
+    private static func sender() -> String? {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              let pid = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value,
+              pid > 0, pid != ProcessInfo.processInfo.processIdentifier
+        else { return nil }
+        return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
@@ -29,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings == nil {
             settings = SettingsWindowController { [weak self] in
                 if let probe = URL(string: "https://example.com/what-this-looks-like") {
-                    self?.queue.append(probe)
+                    self?.queue.append(Link(url: probe, source: nil, learn: false))
                     self?.next()
                 }
             }
@@ -39,7 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func next() {
         guard picker == nil, !queue.isEmpty else { return }
-        let url = queue.removeFirst()
+        let link = queue.removeFirst()
+        let url = link.url
         let choices = Store.choices()
 
         guard !choices.isEmpty else {
@@ -52,7 +73,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let controller = PickerController(url: url, choices: choices) { [weak self] choice in
+        let guess = Store.guess(for: url, source: link.source, in: choices)
+        let controller = PickerController(url: url, choices: choices, highlight: guess.index,
+                                          countdown: Store.countdown) { [weak self] choice, via in
+            if link.learn {
+                Store.record(Pick(time: Date(), url: url.absoluteString, source: link.source,
+                                  guess: choices[guess.index].target.id, confidence: guess.confidence,
+                                  target: choice?.target.id, via: via))
+            }
             if let choice { Launcher.open(url, in: choice.target) }
             self?.picker = nil
             self?.finished()

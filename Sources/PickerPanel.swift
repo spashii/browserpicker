@@ -23,6 +23,11 @@ final class RowView: NSView {
         }
     }
 
+    /// What is left of the countdown, 1 to 0, on the row it will open. Nil when not counting.
+    var progress: CGFloat? {
+        didSet { needsDisplay = true }
+    }
+
     private let iconView = NSImageView()
     private let nameField = NSTextField(labelWithString: "")
     private let keyField = NSTextField(labelWithString: "")
@@ -61,6 +66,16 @@ final class RowView: NSView {
         let box = NSRect(x: Metric.pad, y: 1, width: bounds.width - Metric.pad * 2, height: bounds.height - 2)
         NSColor.controlAccentColor.setFill()
         NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
+
+        // The countdown drains under the name, inside the row that will open.
+        guard let progress else { return }
+        let track = NSRect(x: 52, y: 5, width: bounds.width - 52 - 16, height: 3)
+        NSColor.white.withAlphaComponent(0.25).setFill()
+        NSBezierPath(roundedRect: track, xRadius: 1.5, yRadius: 1.5).fill()
+        var bar = track
+        bar.size.width *= max(0, min(1, progress))
+        NSColor.white.withAlphaComponent(0.9).setFill()
+        NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
     }
 
     override func updateTrackingAreas() {
@@ -90,15 +105,25 @@ final class PickerPanel: NSPanel {
 final class PickerController: NSObject {
     private let url: URL
     private let choices: [Choice]
-    private let finish: (Choice?) -> Void
+    private let highlight: Int
+    private let countdown: TimeInterval
+    /// The choice, or nil, and how it was made: key, click, return, timer, escape, copy, away.
+    private let finish: (Choice?, String) -> Void
     private var panel: PickerPanel!
     private var rows: [RowView] = []
     private var selected = 0
     private var observer: Any?
+    private var timer: Timer?
+    /// The panel opens under the pointer, so a row can land under it without a move.
+    /// Only a pointer that has moved since counts as choosing.
+    private let pointer = NSEvent.mouseLocation
 
-    init(url: URL, choices: [Choice], finish: @escaping (Choice?) -> Void) {
+    init(url: URL, choices: [Choice], highlight: Int, countdown: TimeInterval,
+         finish: @escaping (Choice?, String) -> Void) {
         self.url = url
         self.choices = choices
+        self.highlight = highlight
+        self.countdown = countdown
         self.finish = finish
         super.init()
         build()
@@ -144,17 +169,17 @@ final class PickerController: NSObject {
         for (index, choice) in choices.enumerated() {
             let row = RowView(choice: choice)
             row.frame.origin = NSPoint(x: 0, y: height - Metric.header - CGFloat(index + 1) * Metric.row)
-            row.onHover = { [weak self] in self?.select(index) }
-            row.onActivate = { [weak self] in self?.choose(index) }
+            row.onHover = { [weak self] in self?.hover(index) }
+            row.onActivate = { [weak self] in self?.choose(index, via: "click") }
             content.addSubview(row)
             rows.append(row)
         }
-        select(0)
+        select(highlight)
 
         panel.setFrameTopLeftPoint(anchor(height: height))
         observer = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
                                                           object: panel, queue: .main) { [weak self] _ in
-            self?.close(nil)
+            self?.close(nil, via: "away")
         }
     }
 
@@ -174,6 +199,39 @@ final class PickerController: NSObject {
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(panel.contentView)
+        startCountdown()
+    }
+
+    /// Opens the highlighted row when it runs out. Anything you do first stops it and
+    /// leaves the panel waiting, as it did before there was a countdown.
+    private func startCountdown() {
+        guard countdown > 0, rows.indices.contains(selected) else { return }
+        let start = Date()
+        rows[selected].progress = 1
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let left = 1 - Date().timeIntervalSince(start) / self.countdown
+            if left <= 0 {
+                self.choose(self.selected, via: "timer")
+            } else {
+                self.rows[self.selected].progress = CGFloat(left)
+            }
+        }
+        // Common modes, so it keeps draining while the pointer moves over the panel.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func stopCountdown() {
+        timer?.invalidate()
+        timer = nil
+        rows.forEach { $0.progress = nil }
+    }
+
+    private func hover(_ index: Int) {
+        guard NSEvent.mouseLocation != pointer, index != selected else { return }
+        stopCountdown()
+        select(index)
     }
 
     private func select(_ index: Int) {
@@ -183,34 +241,36 @@ final class PickerController: NSObject {
         rows[index].isSelected = true
     }
 
-    private func choose(_ index: Int) {
+    private func choose(_ index: Int, via: String) {
         guard choices.indices.contains(index) else { return }
-        close(choices[index])
+        close(choices[index], via: via)
     }
 
-    private func close(_ choice: Choice?) {
+    private func close(_ choice: Choice?, via: String) {
         guard panel != nil else { return }
+        stopCountdown()
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         panel.orderOut(nil)
         panel = nil
-        finish(choice)
+        finish(choice, via)
     }
 
     private func handle(_ event: NSEvent) -> Bool {
+        stopCountdown()
         if event.modifierFlags.contains(.command),
            event.charactersIgnoringModifiers?.lowercased() == "c" {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            close(nil)
+            close(nil, via: "copy")
             return true
         }
         switch event.keyCode {
         case 53:
-            close(nil)
+            close(nil, via: "escape")
             return true
         case 36, 76:
-            choose(selected)
+            choose(selected, via: "return")
             return true
         case 125, 121:
             select(min(selected + 1, rows.count - 1))
@@ -225,7 +285,7 @@ final class PickerController: NSObject {
               let index = choices.firstIndex(where: { $0.key == typed })
         else { return false }
         select(index)
-        choose(index)
+        choose(index, via: "key")
         return true
     }
 }
