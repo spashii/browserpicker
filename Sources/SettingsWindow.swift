@@ -4,14 +4,16 @@ final class SettingsWindowController: NSWindowController {
     private let statusField = NSTextField(labelWithString: "")
     private let defaultButton = NSButton(title: "Make Browser Picker the default", target: nil, action: nil)
     private var onTry: (() -> Void)?
+    private var onCheckForUpdates: (() -> Void)?
 
-    convenience init(onTry: @escaping () -> Void) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 380),
+    convenience init(onTry: @escaping () -> Void, onCheckForUpdates: @escaping () -> Void) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 430),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Browser Picker"
         window.center()
         self.init(window: window)
         self.onTry = onTry
+        self.onCheckForUpdates = onCheckForUpdates
         window.contentView = buildContent()
         refresh()
     }
@@ -63,7 +65,18 @@ final class SettingsWindowController: NSWindowController {
         buttons.spacing = 8
         stack.addArrangedSubview(buttons)
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 380))
+        stack.addArrangedSubview(separator())
+
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let versionLabel = NSTextField(labelWithString: "Version \(version)")
+        versionLabel.font = .systemFont(ofSize: 11)
+        versionLabel.textColor = .secondaryLabelColor
+        let updates = NSStackView(views: [button("Check for Updates…", #selector(checkForUpdates)), versionLabel])
+        updates.orientation = .horizontal
+        updates.spacing = 8
+        stack.addArrangedSubview(updates)
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 430))
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -118,6 +131,8 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func tryPicker() { onTry?() }
+
+    @objc private func checkForUpdates() { onCheckForUpdates?() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 

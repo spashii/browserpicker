@@ -1,12 +1,22 @@
 import AppKit
+import Sparkle
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverDelegate {
     private var queue: [URL] = []
     private var picker: PickerController?
     private var settings: SettingsWindowController?
     private var handledURL = false
+    // Sparkle asks on the second launch whether to check automatically; until then it only
+    // checks when asked to from the settings window.
+    private lazy var updater = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: self)
+
+    // A scheduled update alert waits behind other windows instead of taking focus from
+    // whatever the user is doing, and the picker panel floats above it.
+    var supportsGentleScheduledUpdateReminders: Bool { true }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = updater
         // Opened from Spotlight or the Dock rather than by a link: show what it does.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self, !handledURL else { return }
@@ -27,12 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSettings() {
         if settings == nil {
-            settings = SettingsWindowController { [weak self] in
+            settings = SettingsWindowController(onTry: { [weak self] in
                 if let probe = URL(string: "https://example.com/what-this-looks-like") {
                     self?.queue.append(probe)
                     self?.next()
                 }
-            }
+            }, onCheckForUpdates: { [weak self] in
+                self?.updater.checkForUpdates(nil)
+            })
         }
         settings?.present()
     }

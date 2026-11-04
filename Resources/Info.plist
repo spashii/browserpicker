@@ -26,6 +26,10 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://spashii.github.io/browserpicker/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>YLvPSGEaYiPsXphy/q9LCDGs2s0qp8hM2LVBIWbl78c=</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

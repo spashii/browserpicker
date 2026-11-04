@@ -12,3 +12,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: ./build.sh
       - run: lipo -info "build/Browser Picker.app/Contents/MacOS/BrowserPicker"
+      - run: codesign --verify --deep --strict "build/Browser Picker.app"

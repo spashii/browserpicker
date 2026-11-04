@@ -16,15 +16,9 @@ brew trust spashii/browserpicker
 brew install --cask browserpicker
 ```
 
-The cask clears the quarantine flag for you, so the app opens on the first try.
+Or download `BrowserPicker-<version>.zip` from the [latest release](https://github.com/spashii/browserpicker/releases/latest), unzip and move `Browser Picker.app` to `/Applications`.
 
-Or download `BrowserPicker-<version>.zip` from the [latest release](https://github.com/spashii/browserpicker/releases/latest), unzip, move `Browser Picker.app` to `/Applications`, then clear the quarantine flag once. The app is signed ad hoc, not notarised, so macOS would otherwise refuse to open it:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/Browser Picker.app"
-```
-
-Open the app once. It offers to make itself the default browser and lists everything it found. Requires macOS 13 or later.
+The app is signed with a Developer ID and notarized by Apple, so it opens on the first try. Open it once. It offers to make itself the default browser and lists everything it found. Requires macOS 13 or later.
 
 ## Use
 
@@ -35,6 +29,10 @@ Click a link. The panel shows every browser and profile with a key next to it.
 - Command-C copies the link instead of opening it.
 
 Every choice is per link. Nothing is remembered unless you add a rule.
+
+## Updates
+
+Browser Picker checks for updates with [Sparkle](https://sparkle-project.org). It asks before it checks on its own, and Check for Updates in its window looks right away.
 
 ## Configure
 
@@ -63,20 +61,20 @@ Target ids are the bundle id, plus `#<profile directory>` for Chromium and Firef
 
 ## Build from source
 
-Needs the Xcode command line tools and nothing else.
+Needs the Xcode command line tools and nothing else. The first build downloads Sparkle, pinned to one version and checked against its checksum.
 
 ```sh
 ./install.sh
 ```
 
-That builds a universal binary into `build/`, copies it to `/Applications` and registers it with Launch Services.
+That builds a universal binary into `build/`, signs it ad hoc, copies it to `/Applications` and registers it with Launch Services.
 
 ## Release
 
-Push a tag and CI does the rest:
+On a Mac that holds the Developer ID identity, the notary profile and the Sparkle key, with `gh` logged in:
 
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+Tools/release.sh 0.4.0
 ```
 
-The workflow builds the app, uploads the zip to a GitHub release, and commits the new version and checksum into the Homebrew cask.
+It builds and signs the app, notarizes and staples it, signs the zip for Sparkle, adds it to `site/appcast.xml` and the cask, then publishes the GitHub release and pushes main. The top of the script lists where it looks for each key.

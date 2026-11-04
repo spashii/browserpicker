@@ -44,6 +44,7 @@
 
   .bottom { text-align: center; padding: 0 0 96px; }
   .bottom p { color: var(--muted); }
+  .bottom .note { margin-top: 16px; font-size: 14px; }
   pre { display: inline-block; text-align: left; margin-top: 16px; padding: 16px 20px; border-radius: 12px; background: var(--card); box-shadow: var(--ring); font: 14px/1.6 var(--mono); }
   footer.site { border-top: 1px solid var(--line); padding: 24px; text-align: center; font-size: 14px; color: var(--muted); }
 
@@ -64,7 +65,7 @@
         <a class="button primary" href="https://github.com/spashii/browserpicker/releases/latest">Download for Mac</a>
         <a class="button" href="https://github.com/spashii/browserpicker">View on GitHub</a>
       </div>
-      <p class="meta">Free and open source · macOS 13 or later</p>
+      <p class="meta">Free and open source · Signed and notarized · macOS 13 or later</p>
     </div>
 
     <div class="panel" role="img" aria-label="The picker panel: a link, with Brave work, Brave personal, Chrome and Safari to choose from, each with a number key">
@@ -96,6 +97,7 @@
     <pre>brew tap spashii/browserpicker https://github.com/spashii/browserpicker
 brew trust spashii/browserpicker
 brew install --cask browserpicker</pre>
+    <p class="note">It keeps itself up to date with Sparkle, and asks before it checks.</p>
   </section>
 </main>
 <footer class="site">Browser Picker is MIT licensed. <a href="https://github.com/spashii/browserpicker">Source on GitHub</a></footer>
