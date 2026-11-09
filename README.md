@@ -24,6 +24,8 @@ The app is signed with a Developer ID and notarized by Apple, so it opens on the
 
 Click a link. The panel shows every browser and profile with a key next to it.
 
+The highlighted row opens after 5 seconds. It's Browser Picker's guess when it has learned where links like this one go, and your default row otherwise. Press any key or move to another row to stop it.
+
 - Press the key, or arrow down and press Return, to open the link there.
 - Escape closes the panel without opening anything.
 - Command-C copies the link instead of opening it.
@@ -40,6 +42,8 @@ Everything lives in `~/.config/browserpicker/config.json`. The app writes it on 
 
 ```json
 {
+  "default": "com.brave.Browser#Default",
+  "countdown": 5,
   "rules": [
     { "host": "example.com", "target": "com.brave.Browser#Default" },
     { "host": "github.com", "target": "com.google.Chrome#Default" }
@@ -56,6 +60,8 @@ Everything lives in `~/.config/browserpicker/config.json`. The app writes it on 
 - `targets` order is the panel order. New browsers and profiles are added next to their app.
 - `name` renames a row. `key` is the shortcut. `hidden` drops it from the panel.
 - `rules` skip the panel for a host and its subdomains. The longest matching host wins.
+- `countdown` is how many seconds the highlighted row waits before it opens. 0 turns the countdown off.
+- `default` is the row highlighted, and opened when the countdown ends, when there's no sure guess. Without it, the top row.
 
 Target ids are the bundle id, plus `#<profile directory>` for Chromium and Firefox profiles.
 
