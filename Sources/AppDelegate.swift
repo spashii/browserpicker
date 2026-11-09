@@ -29,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
     // whatever the user is doing, and the picker panel floats above it.
     var supportsGentleScheduledUpdateReminders: Bool { true }
 
+    // Before any link arrives, so the first guess already reads the rewritten log.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        Store.minimiseLog()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = updater
         // Sparkle reopening it after an update nobody watched is not a reason to show a window.
@@ -96,15 +101,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
             return
         }
 
-        let guess = Store.guess(for: url, source: link.source, in: choices)
-        let controller = PickerController(url: url, choices: choices, highlight: guess.index,
+        let controller = PickerController(url: url, choices: choices,
+                                          highlight: Store.guess(for: url, source: link.source, in: choices),
                                           countdown: Store.countdown) { [weak self] choice, via in
-            if link.learn {
-                Store.record(Pick(time: Date(), url: url.absoluteString, source: link.source,
-                                  guess: choices[guess.index].target.id, confidence: guess.confidence,
-                                  target: choice?.target.id, via: via))
+            if let choice {
+                // Only a link that opened teaches the model, so only that is logged.
+                if link.learn, let pick = Pick(time: Date(), url: url, source: link.source,
+                                               target: choice.target.id, via: via) {
+                    Store.record(pick)
+                }
+                self?.launch(url, in: choice.target)
             }
-            if let choice { self?.launch(url, in: choice.target) }
             self?.picker = nil
             self?.finished()
         }

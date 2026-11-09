@@ -1,13 +1,15 @@
 import Foundation
 
-// Checks the guessing model outside the app. Not part of the build.
+// Checks the guessing model and its log outside the app. Not part of the build.
 //
-//   swiftc -parse-as-library Sources/Model.swift Tools/ModelCheck.swift -o /tmp/model-check
-//   /tmp/model-check                                  # behaviour cases, exits 1 on a failure
+//   swiftc -parse-as-library Sources/Model.swift Sources/PickLog.swift Tools/ModelCheck.swift -o /tmp/model-check
+//   /tmp/model-check                                  # behaviour cases and the log format, exits 1 on a failure
 //   /tmp/model-check replay picks.jsonl <default id>  # how often the highlight was right
+//   /tmp/model-check log picks.jsonl                  # a real log against the one-time rewrite, on a copy
 //
 // The replay is the test that matters: it walks a real log in order and counts how often
-// the countdown would have opened the wrong target.
+// the countdown would have opened the wrong target. `log` never writes to the file it is
+// given: it rewrites a copy in a temporary folder and checks the model learns the same.
 
 @main
 enum ModelCheck {
@@ -15,8 +17,12 @@ enum ModelCheck {
         let args = CommandLine.arguments
         if args.count >= 4, args[1] == "replay" {
             replay(path: args[2], fallback: args[3])
+        } else if args.count >= 3, args[1] == "log" {
+            exit(log(path: args[2]) ? 0 : 1)
         } else {
-            exit(cases() ? 0 : 1)
+            let behaviour = cases()
+            let format = logFormat()
+            exit(behaviour && format ? 0 : 1)
         }
     }
 
@@ -26,8 +32,7 @@ enum ModelCheck {
     static let all = [d, k, s, "com.brave.Browser#Profile 3", "com.apple.Safari"]
 
     static func pick(_ url: String, _ target: String, via: String = "key", at seconds: Double = 0) -> Pick {
-        Pick(time: Date(timeIntervalSince1970: seconds), url: url, source: nil, guess: nil,
-             confidence: nil, target: target, via: via)
+        Pick(time: Date(timeIntervalSince1970: seconds), url: url, source: nil, target: target, via: via)
     }
 
     static func guess(_ picks: [Pick], _ url: String) -> (String, Double) {
@@ -76,6 +81,189 @@ enum ModelCheck {
         ]
         expect("redone timer pick is not learned", undone, "https://linear.app/x", k, sure: true)
 
+        // The redo rule, exactly: a skipped timer pick leaves the model as if it never happened.
+        func same(_ a: Model, _ b: Model, _ url: String) -> Bool {
+            let clues = Clues(URL(string: url)!, source: nil)
+            return a.predict(clues) == b.predict(clues)
+        }
+        func redo(_ name: String, timer: String, redo: String, after seconds: Double, skipped: Bool) {
+            let timed = pick(timer, d, via: "timer", at: 100)
+            let chosen = pick(redo, k, at: 100 + seconds)
+            let with = Model.trained(on: [timed, chosen], classes: all)
+            let without = Model.trained(on: [chosen], classes: all)
+            let pass = same(with, without, timer) == skipped
+            ok = ok && pass
+            print("\(pass ? "pass" : "FAIL")  redo rule, \(name): \(skipped ? "skipped" : "learned")")
+        }
+        let full = "https://linear.app/acme/issue/ACM-12?focus=comment#c3"
+        let short = PickLog.trim(URL(string: full)!)!
+        redo("same whole link", timer: full, redo: full, after: 10, skipped: true)
+        redo("same trimmed link", timer: short, redo: short, after: 10, skipped: true)
+        redo("whole link from an old log, trimmed redo", timer: full, redo: short, after: 10, skipped: true)
+        redo("other link, same place", timer: short, redo: "https://linear.app/acme/issue", after: 10, skipped: true)
+        redo("other place", timer: short, redo: "https://linear.app/initech/issue", after: 10, skipped: false)
+        redo("after a minute", timer: short, redo: short, after: 61, skipped: false)
+
+        return ok
+    }
+
+    /// The log keeps only what the model reads, and old logs still read.
+    static func logFormat() -> Bool {
+        var ok = true
+        func check(_ name: String, _ pass: Bool) {
+            ok = ok && pass
+            print("\(pass ? "pass" : "FAIL")  \(name)")
+        }
+
+        // Every part of a link the trim drops or rewrites, with Clues compared on each.
+        let links = [
+            "https://github.com/acme/web/pull/7/files?diff=split#r123",
+            "https://GitHub.com/Acme/Web",
+            "https://user:secret@staging.acme.dev:8443/projects/4/settings?tab=1",
+            "https://app.slack.com/client/T0123/C0456",
+            "https://example.com",
+            "https://example.com/",
+            "https://example.com/one/",
+            "https://example.com//double//slash/x",
+            "https://example.com/a%2Fb/c/d",
+            "https://example.com/%2F/a/b/c",
+            "https://example.com/caf%C3%A9/men%C3%BC/x",
+            "https://example.com/a;b=c/d/e",
+            "https://example.com/a%3Bb/d/e",
+            "https://example.com/100%25/x/y",
+            "https://example.com/a+b/c d".addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed)!,
+            "https://xn--bcher-kva.example/b%C3%BCcher/x/y",
+            "https://192.168.1.10:3000/api/v1/items?id=5",
+            "https://[::1]:8080/a/b/c",
+            "http://localhost:8787/report/2026/index.html",
+            "file:///Users/someone/Downloads/page.html",
+        ]
+        for link in links {
+            let url = URL(string: link)!
+            guard let short = PickLog.trim(url), let back = URL(string: short) else {
+                check("trim \(link): does not parse back", false)
+                continue
+            }
+            let a = Clues(url, source: "com.tinyspeck.slackmacgap")
+            let b = Clues(back, source: "com.tinyspeck.slackmacgap")
+            let sameClues = a.features == b.features && a.places.map { "\($0.key) \($0.level)" } == b.places.map { "\($0.key) \($0.level)" }
+            let idempotent = PickLog.trim(back) == short
+            let bare = back.query == nil && back.fragment == nil && back.user == nil && back.password == nil
+                && back.path.split(separator: "/").count <= 2
+            check("trim \(link) -> \(short): same clues \(sameClues), twice the same \(idempotent), bare \(bare)",
+                  sameClues && idempotent && bare)
+        }
+
+        // A log written before 0.5.0: whole links, guess and confidence, and lines with no target.
+        let old = """
+        {"confidence":0.40460967519168967,"guess":"\(d)","source":"com.tinyspeck.slackmacgap","target":"\(k)","time":"2026-11-04T11:15:43Z","url":"https://github.com/acme/web/pull/7?w=1#r9","via":"key"}
+        {"confidence":0.9,"guess":"\(d)","source":"com.apple.mail","time":"2026-11-04T11:16:00Z","url":"https://example.com/private/token/abc","via":"escape"}
+        {"guess":"\(d)","target":"\(d)","time":"2026-11-04T11:17:00Z","url":"https://calendar.google.com/calendar/u/0/r/week","via":"timer"}
+        not json
+
+        """
+        let read = PickLog.read(old)
+        check("old log reads: 2 picks that opened, of 4 lines", read.count == 2 && read.map(\.target) == [k, d])
+        let rewritten = PickLog.minimised(old)
+        let lines = rewritten.split(separator: "\n")
+        let fields = lines.compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+        check("rewrite keeps the 2 opened picks", lines.count == 2 && fields.count == 2)
+        check("rewrite keeps time, url, source, target, via and nothing else",
+              fields.allSatisfy { Set($0.keys).isSubset(of: ["time", "url", "source", "target", "via"]) }
+              && Set(fields[0].keys) == ["time", "url", "source", "target", "via"]
+              && Set(fields[1].keys) == ["time", "url", "target", "via"])
+        check("rewrite trims the links",
+              fields.map { $0["url"] as? String ?? "" } == ["https://github.com/acme/web", "https://calendar.google.com/calendar/u"])
+        check("rewrite keeps time, source, target and via as they were",
+              zip(read, PickLog.read(rewritten)).allSatisfy { $0.time == $1.time && $0.source == $1.source && $0.target == $1.target && $0.via == $1.via })
+        check("rewrite of a rewritten log changes nothing", PickLog.minimised(rewritten) == rewritten)
+        check("a new pick is written the same way",
+              PickLog.encode(pick("https://github.com/acme/web/pull/7?w=1#r9", k)).map { String(decoding: $0, as: UTF8.self) }
+                  == #"{"target":"com.brave.Browser#Profile 1","time":"1970-01-01T00:00:00Z","url":"https://github.com/acme/web","via":"key"}"# + "\n")
+        return ok
+    }
+
+    /// A real log, as a 0.4.0 or 0.5.0 build wrote it, against the one-time rewrite. Works on a
+    /// copy in a temporary folder: the rewrite must keep every opened pick, give each the same
+    /// clues, keep the model's guesses, back the old log up, and be a no-op the second time.
+    static func log(path: String) -> Bool {
+        var ok = true
+        func check(_ name: String, _ pass: Bool) {
+            ok = ok && pass
+            print("\(pass ? "pass" : "FAIL")  \(name)")
+        }
+        guard let original = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let text = String(data: original, encoding: .utf8) else {
+            print("cannot read \(path)")
+            return false
+        }
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("model-check-\(ProcessInfo.processInfo.processIdentifier)")
+        try? FileManager.default.removeItem(at: folder)
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let copy = folder.appendingPathComponent("picks.jsonl")
+        try! original.write(to: copy)
+
+        let lines = text.split(separator: "\n")
+        let before = PickLog.read(text)
+        print("\(lines.count) lines, \(before.count) read as picks that opened")
+
+        let backup: URL?
+        do { backup = try PickLog.minimise(copy) } catch {
+            check("rewrite: \(error)", false)
+            return false
+        }
+        let rewritten = (try? String(contentsOf: copy, encoding: .utf8)) ?? ""
+        let after = PickLog.read(rewritten)
+        check("backup holds the old log byte for byte",
+              backup.flatMap { try? Data(contentsOf: $0) } == original || (backup == nil && rewritten == text))
+        check("same number of picks: \(before.count) before, \(after.count) after, \(rewritten.split(separator: "\n").count) lines",
+              before.count == after.count && rewritten.split(separator: "\n").count == after.count)
+        check("no temporary file left", !FileManager.default.fileExists(atPath: copy.path + ".tmp"))
+
+        let fields = rewritten.split(separator: "\n").compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+        check("every line holds time, url, source, target, via and nothing else",
+              fields.count == after.count && fields.allSatisfy {
+                  Set($0.keys).subtracting(["source"]) == ["time", "url", "target", "via"] && Set($0.keys).count <= 5
+              })
+        check("every url is scheme://host[:port]/seg1/seg2",
+              after.allSatisfy { pick in
+                  let url = URL(string: pick.url)
+                  return url != nil && url!.query == nil && url!.fragment == nil && url!.user == nil
+                      && url!.path.split(separator: "/").count <= 2
+              })
+        check("time, source, target and via unchanged",
+              zip(before, after).allSatisfy { $0.time == $1.time && $0.source == $1.source && $0.target == $1.target && $0.via == $1.via })
+        check("same clues for every line", zip(before, after).allSatisfy { a, b in
+            let x = Clues(URL(string: a.url)!, source: a.source)
+            let y = Clues(URL(string: b.url)!, source: b.source)
+            return x.features == y.features && x.places.map(\.key) == y.places.map(\.key) && x.places.map(\.level) == y.places.map(\.level)
+        })
+
+        // The guess the panel would have made before each pick, from the picks before it, with
+        // more targets on offer than the log has seen.
+        let classes = Array(Set(before.map(\.target) + all)).sorted()
+        var sameGuesses = true
+        for index in 0...before.count {
+            let x = Model.trained(on: Array(before[..<index]), classes: classes)
+            let y = Model.trained(on: Array(after[..<index]), classes: classes)
+            let probes = index < before.count
+                ? [(before[index], after[index])]
+                : zip(before, after).map { ($0, $1) }
+            for (a, b) in probes {
+                let p = x.predict(Clues(URL(string: a.url)!, source: a.source))
+                let q = y.predict(Clues(URL(string: b.url)!, source: b.source))
+                if p != q { sameGuesses = false }
+            }
+        }
+        check("the model gives the same guesses, to the last digit, before and after", sameGuesses)
+
+        let again: URL?
+        do { again = try PickLog.minimise(copy) } catch { again = URL(fileURLWithPath: "/") }
+        let backups = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.filter { $0.contains(".bak-") } ?? []
+        check("a second run changes nothing and backs up nothing",
+              again == nil && (try? String(contentsOf: copy, encoding: .utf8)) == rewritten && backups.count <= 1)
         return ok
     }
 
@@ -84,12 +272,8 @@ enum ModelCheck {
             print("cannot read \(path)")
             exit(1)
         }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let picks = text.split(separator: "\n").compactMap {
-            try? decoder.decode(Pick.self, from: Data($0.utf8))
-        }.filter { $0.target != nil }
-        let classes = Array(Set(picks.compactMap(\.target) + [fallback])).sorted()
+        let picks = PickLog.read(text)
+        let classes = Array(Set(picks.map(\.target) + [fallback])).sorted()
         print("\(picks.count) picks, \(classes.count) targets")
 
         var byHost: [String: String] = [:]
@@ -129,7 +313,7 @@ enum ModelCheck {
                         confident += 1
                         if best.key != pick.target { confidentWrong += 1 }
                     }
-                    model.learn(features, target: pick.target!)
+                    model.learn(features, target: pick.target)
                 }
                 print(String(format: "%.2f  %.0f/%.1f   %.1f   %3.0f%%   %3.0f%%   %3d         %.2f/%.2f",
                              rate, trust[0], trust[1], sure, 100 * Double(right) / Double(picks.count),

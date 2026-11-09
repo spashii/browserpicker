@@ -1,20 +1,5 @@
 import Foundation
 
-/// One line of picks.jsonl: what the panel guessed and what happened. The log is the
-/// model's only state, so deleting the file starts it over from nothing.
-struct Pick: Codable {
-    var time: Date
-    var url: String
-    /// Bundle id of the app the link was clicked in, when macOS says.
-    var source: String?
-    var guess: String?
-    var confidence: Double?
-    /// The target that opened, nil when the panel was closed or the link copied.
-    var target: String?
-    /// key, click, return, timer, escape, copy or away.
-    var via: String
-}
-
 /// What the model reads from one link.
 struct Clues {
     /// Parts of the URL and the app it came from.
@@ -94,19 +79,22 @@ struct Model {
 
     /// Replays the log in order, so it ends where an always-running learner would.
     /// A timed open that you redid in another target within a minute was a wrong
-    /// guess, not a choice, so it teaches nothing.
+    /// guess, not a choice, so it teaches nothing. Links are compared trimmed, the way the
+    /// log keeps them, so a whole link from an old log matches its trimmed redo; any other
+    /// link the model cannot tell apart from it counts as a redo too.
     static func trained(on picks: [Pick], classes: [String]) -> Model {
         var model = Model(classes: classes)
-        let opened = picks.suffix(window).filter { $0.target != nil }
+        let opened = Array(picks.suffix(window))
+        let places = opened.map { pick in URL(string: pick.url).flatMap(PickLog.trim) ?? pick.url }
         for (index, pick) in opened.enumerated() {
-            guard let target = pick.target, let url = URL(string: pick.url) else { continue }
+            guard let url = URL(string: pick.url) else { continue }
             if pick.via == "timer",
-               opened[(index + 1)...]
-                   .prefix(while: { $0.time.timeIntervalSince(pick.time) < 60 })
-                   .contains(where: { $0.url == pick.url && $0.target != target }) {
+               opened.indices[(index + 1)...]
+                   .prefix(while: { opened[$0].time.timeIntervalSince(pick.time) < 60 })
+                   .contains(where: { places[$0] == places[index] && opened[$0].target != pick.target }) {
                 continue
             }
-            model.learn(Clues(url, source: pick.source), target: target)
+            model.learn(Clues(url, source: pick.source), target: pick.target)
         }
         return model
     }
