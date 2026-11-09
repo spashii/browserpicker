@@ -7,6 +7,15 @@
     <language>en</language>
     <!-- Tools/release.sh adds each release below this line, newest first. -->
     <item>
+      <title>Version 0.5.1</title>
+      <link>https://github.com/spashii/browserpicker/releases/tag/v0.5.1</link>
+      <pubDate>Mon, 09 Nov 2026 14:11:38 +0000</pubDate>
+      <sparkle:version>0.5.1</sparkle:version>
+      <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/spashii/browserpicker/releases/download/v0.5.1/BrowserPicker-0.5.1.zip" sparkle:edSignature="d3RKJPS95UYfMj74hNj+Ha1yN6yHkllRV1GbBw7bi8zJ7if0phnSiBcFg5T985/CDvLGGvAh8ex6E9DJGX4+AA==" length="1516486" type="application/octet-stream"/>
+    </item>
+    <item>
       <title>Version 0.5.0</title>
       <link>https://github.com/spashii/browserpicker/releases/tag/v0.5.0</link>
       <pubDate>Mon, 09 Nov 2026 14:01:55 +0000</pubDate>

@@ -1,6 +1,6 @@
 cask "browserpicker" do
-  version "0.5.0"
-  sha256 "d8786841cd99901afc2d5d0a4f89f5c744dea038e4b6150bdf2f633fa795a00c"
+  version "0.5.1"
+  sha256 "13b1636566cce054c948c22a8db88098f8dcf81251fbc4e6652a5ed79da924fe"
 
   url "https://apps.idea2prod.in/browserpicker/download/#{version}"
   name "Browser Picker"
