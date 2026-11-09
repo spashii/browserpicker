@@ -28,7 +28,7 @@ Click a link. The panel shows every browser and profile with a key next to it.
 - Escape closes the panel without opening anything.
 - Command-C copies the link instead of opening it.
 
-Every choice is per link. Nothing is remembered unless you add a rule.
+Browser Picker learns which browser you pick for which links. For each link you open, it keeps, on your Mac, the time, the link cut down to its site and first two path parts (such as github.com/your-org), the app you clicked it in, and the browser you chose and how. The guess is rebuilt from that file every time, and nothing leaves your Mac. Delete ~/.config/browserpicker/picks.jsonl to start over.
 
 ## Updates
 

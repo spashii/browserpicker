@@ -98,6 +98,7 @@
 brew trust spashii/browserpicker
 brew install --cask browserpicker</pre>
     <p class="note">It keeps itself up to date with Sparkle, and asks before it checks. Update checks and downloads go through apps.idea2prod.in, which counts them by app, version and country and never stores your IP address.</p>
+    <p class="note">Browser Picker learns which browser you pick for which links. For each link you open, it keeps, on your Mac, the time, the link cut down to its site and first two path parts (such as github.com/your-org), the app you clicked it in, and the browser you chose and how. The guess is rebuilt from that file every time, and nothing leaves your Mac. Delete ~/.config/browserpicker/picks.jsonl to start over.</p>
   </section>
 </main>
 <footer class="site">Browser Picker is MIT licensed. <a href="https://github.com/spashii/browserpicker">Source on GitHub</a></footer>
