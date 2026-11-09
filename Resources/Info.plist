@@ -61,7 +61,7 @@
 		<string>NSUserActivityTypeBrowsingWeb</string>
 	</array>
 	<key>SUFeedURL</key>
-	<string>https://spashii.github.io/browserpicker/appcast.xml</string>
+	<string>https://apps.idea2prod.in/browserpicker/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>YLvPSGEaYiPsXphy/q9LCDGs2s0qp8hM2LVBIWbl78c=</string>
 </dict>

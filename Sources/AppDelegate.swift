@@ -1,7 +1,7 @@
 import AppKit
 import Sparkle
 
-final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverDelegate, SPUUpdaterDelegate {
     private var queue: [URL] = []
     private var picker: PickerController?
     private var settings: SettingsWindowController?
@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
     // Sparkle asks on the second launch whether to check automatically; until then it only
     // checks when asked to from the settings window.
     private lazy var updater = SPUStandardUpdaterController(
-        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: self)
+        startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
 
     // A scheduled update alert waits behind other windows instead of taking focus from
     // whatever the user is doing, and the picker panel floats above it.
@@ -84,5 +84,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverD
         if settings?.window?.isVisible != true {
             NSApp.hide(nil)
         }
+    }
+
+    // MARK: Updates
+
+    /// Marks update checks from the owner's own Macs (`defaults write com.spashii.browserpicker
+    /// OwnerMac -bool YES`) with `self=1` on the appcast URL, so the counts on apps.idea2prod.in
+    /// can leave them out. Everyone else's checks carry no parameters; system profiling stays off.
+    func feedParameters(for updater: SPUUpdater, sendingSystemProfile: Bool) -> [[String: String]] {
+        UserDefaults.standard.bool(forKey: "OwnerMac") ? [["key": "self", "value": "1"]] : []
     }
 }
