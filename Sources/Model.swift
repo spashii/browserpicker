@@ -49,6 +49,13 @@ struct Clues {
     }
 }
 
+extension Clues: Equatable {
+    static func == (a: Clues, b: Clues) -> Bool {
+        a.features == b.features && a.places.map(\.key) == b.places.map(\.key)
+            && a.places.map(\.level) == b.places.map(\.level)
+    }
+}
+
 /// Softmax regression over the clues in a link, plus one learned nudge toward whatever
 /// you picked last at the most specific place it shares with an earlier link. A few
 /// thousand numbers at most, rebuilt from the log on every link, so it ships as code and

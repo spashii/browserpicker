@@ -97,28 +97,69 @@ enum PickLog {
     /// Rewrites a log from before 0.5.0 the way this version writes it, so it holds only what
     /// the model reads. Copies the old log to `<name>.bak-<time>` first, then writes a
     /// temporary file and renames it over the log, so a crash leaves the old log or the new
-    /// one and never half of either. Returns the backup, or nil when there was nothing to
-    /// change. Throws, with the log as it was, when the backup or the write fails.
+    /// one and never half of either. The backup holds the whole old links the rewrite exists
+    /// to drop, so it goes as soon as the new log checks out; when it does not, the old log
+    /// comes back from the backup and the backup stays. Returns whether the log changed.
+    /// `rewrite` is there for ModelCheck to break.
     @discardableResult
-    static func minimise(_ file: URL, now: Date = Date()) throws -> URL? {
-        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+    static func minimise(_ file: URL, now: Date = Date(),
+                         rewrite: (String) -> String = PickLog.minimised) throws -> Bool {
+        guard FileManager.default.fileExists(atPath: file.path) else { return false }
         let text = try String(contentsOf: file, encoding: .utf8)
-        let minimal = minimised(text)
-        guard minimal != text else { return nil }
+        let minimal = rewrite(text)
+        guard minimal != text else { return false }
 
         let stamp = DateFormatter()
         stamp.locale = Locale(identifier: "en_US_POSIX")
         stamp.dateFormat = "yyyyMMdd-HHmmss"
-        let folder = file.deletingLastPathComponent()
-        let backup = folder.appendingPathComponent(file.lastPathComponent + ".bak-" + stamp.string(from: now))
+        let backup = file.deletingLastPathComponent()
+            .appendingPathComponent(file.lastPathComponent + backupMark + stamp.string(from: now))
         try FileManager.default.copyItem(at: file, to: backup)
+        try replace(file, with: Data(minimal.utf8))
 
-        let temporary = folder.appendingPathComponent(file.lastPathComponent + ".tmp")
-        try Data(minimal.utf8).write(to: temporary)
+        guard let written = try? String(contentsOf: file, encoding: .utf8), keeps(text, in: written) else {
+            try replace(file, with: Data(contentsOf: backup))
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try FileManager.default.removeItem(at: backup)
+        return true
+    }
+
+    /// Whether `written` holds every pick of the `old` log the model could learn from, in order,
+    /// each line parsing, with the same time, source, target and via and the same clues.
+    static func keeps(_ old: String, in written: String) -> Bool {
+        let expected = read(old).filter { URL(string: $0.url) != nil }
+        let picks = read(written)
+        guard picks.count == expected.count, written.split(separator: "\n").count == picks.count else { return false }
+        return zip(expected, picks).allSatisfy { a, b in
+            guard let x = URL(string: a.url), let y = URL(string: b.url) else { return false }
+            return a.time == b.time && a.source == b.source && a.target == b.target && a.via == b.via
+                && Clues(x, source: a.source) == Clues(y, source: b.source)
+        }
+    }
+
+    /// Removes the `<name>.bak-*` backups next to the log, which 0.5.0 kept after its rewrite
+    /// with the whole old links in them. Only once the log itself is in the trimmed shape, so
+    /// a backup is never the last copy of picks the log does not hold yet. Returns the count.
+    @discardableResult
+    static func removeBackups(of file: URL) -> Int {
+        guard let text = try? String(contentsOf: file, encoding: .utf8), minimised(text) == text else { return 0 }
+        let folder = file.deletingLastPathComponent()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return names.filter { $0.hasPrefix(file.lastPathComponent + backupMark) }.filter { name in
+            (try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))) != nil
+        }.count
+    }
+
+    private static let backupMark = ".bak-"
+
+    /// A temporary file renamed over `file`, so readers see the old contents or the new.
+    private static func replace(_ file: URL, with data: Data) throws {
+        let temporary = file.deletingLastPathComponent().appendingPathComponent(file.lastPathComponent + ".tmp")
+        try data.write(to: temporary)
         guard rename(temporary.path, file.path) == 0 else {
             try? FileManager.default.removeItem(at: temporary)
             throw CocoaError(.fileWriteUnknown)
         }
-        return backup
     }
 }

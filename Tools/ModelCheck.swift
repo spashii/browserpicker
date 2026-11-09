@@ -9,7 +9,8 @@ import Foundation
 //
 // The replay is the test that matters: it walks a real log in order and counts how often
 // the countdown would have opened the wrong target. `log` never writes to the file it is
-// given: it rewrites a copy in a temporary folder and checks the model learns the same.
+// given: it rewrites a copy in a temporary folder, checks the model learns the same, and
+// runs the backup paths on that copy.
 
 @main
 enum ModelCheck {
@@ -22,7 +23,8 @@ enum ModelCheck {
         } else {
             let behaviour = cases()
             let format = logFormat()
-            exit(behaviour && format ? 0 : 1)
+            let files = logFiles()
+            exit(behaviour && format && files ? 0 : 1)
         }
     }
 
@@ -107,6 +109,15 @@ enum ModelCheck {
         return ok
     }
 
+    /// A log written before 0.5.0: whole links, guess and confidence, and lines with no target.
+    static let oldLog = """
+    {"confidence":0.40460967519168967,"guess":"\(d)","source":"com.tinyspeck.slackmacgap","target":"\(k)","time":"2026-11-04T11:15:43Z","url":"https://github.com/acme/web/pull/7?w=1#r9","via":"key"}
+    {"confidence":0.9,"guess":"\(d)","source":"com.apple.mail","time":"2026-11-04T11:16:00Z","url":"https://example.com/private/token/abc","via":"escape"}
+    {"guess":"\(d)","target":"\(d)","time":"2026-11-04T11:17:00Z","url":"https://calendar.google.com/calendar/u/0/r/week","via":"timer"}
+    not json
+
+    """
+
     /// The log keeps only what the model reads, and old logs still read.
     static func logFormat() -> Bool {
         var ok = true
@@ -146,7 +157,7 @@ enum ModelCheck {
             }
             let a = Clues(url, source: "com.tinyspeck.slackmacgap")
             let b = Clues(back, source: "com.tinyspeck.slackmacgap")
-            let sameClues = a.features == b.features && a.places.map { "\($0.key) \($0.level)" } == b.places.map { "\($0.key) \($0.level)" }
+            let sameClues = a == b
             let idempotent = PickLog.trim(back) == short
             let bare = back.query == nil && back.fragment == nil && back.user == nil && back.password == nil
                 && back.path.split(separator: "/").count <= 2
@@ -154,14 +165,7 @@ enum ModelCheck {
                   sameClues && idempotent && bare)
         }
 
-        // A log written before 0.5.0: whole links, guess and confidence, and lines with no target.
-        let old = """
-        {"confidence":0.40460967519168967,"guess":"\(d)","source":"com.tinyspeck.slackmacgap","target":"\(k)","time":"2026-11-04T11:15:43Z","url":"https://github.com/acme/web/pull/7?w=1#r9","via":"key"}
-        {"confidence":0.9,"guess":"\(d)","source":"com.apple.mail","time":"2026-11-04T11:16:00Z","url":"https://example.com/private/token/abc","via":"escape"}
-        {"guess":"\(d)","target":"\(d)","time":"2026-11-04T11:17:00Z","url":"https://calendar.google.com/calendar/u/0/r/week","via":"timer"}
-        not json
-
-        """
+        let old = oldLog
         let read = PickLog.read(old)
         check("old log reads: 2 picks that opened, of 4 lines", read.count == 2 && read.map(\.target) == [k, d])
         let rewritten = PickLog.minimised(old)
@@ -183,6 +187,83 @@ enum ModelCheck {
         return ok
     }
 
+    /// The one-time rewrite and the backup cleanup on the synthetic old log.
+    static func logFiles() -> Bool {
+        var ok = true
+        _ = rewritePaths(Data(oldLog.utf8)) { name, pass in
+            ok = ok && pass
+            print("\(pass ? "pass" : "FAIL")  \(name)")
+        }
+        return ok
+    }
+
+    /// Runs the rewrite and the backup cleanup on a copy of `original`, a log from before 0.5.0,
+    /// in a temporary folder, and returns the rewritten log.
+    static func rewritePaths(_ original: Data, _ check: (String, Bool) -> Void) -> String {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appendingPathComponent("model-check-\(UUID().uuidString)")
+        try! files.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+        let log = folder.appendingPathComponent("picks.jsonl")
+        let text = String(decoding: original, as: UTF8.self)
+        func backups() -> [URL] {
+            ((try? files.contentsOfDirectory(atPath: folder.path)) ?? [])
+                .filter { $0.hasPrefix("picks.jsonl.bak-") }.sorted().map { folder.appendingPathComponent($0) }
+        }
+        func contents(_ url: URL) -> Data? { try? Data(contentsOf: url) }
+        func reset() {
+            backups().forEach { try? files.removeItem(at: $0) }
+            try! original.write(to: log)
+        }
+
+        // A rewrite that does not check out puts the old log back and keeps the backup.
+        let broken: [(String, (String) -> String)] = [
+            ("loses a pick", { text in
+                PickLog.minimised(text).split(separator: "\n").dropLast().map { $0 + "\n" }.joined() }),
+            ("changes the clues", { text in
+                PickLog.read(text).compactMap { pick -> Data? in
+                    var pick = pick
+                    if let url = URL(string: pick.url), let scheme = url.scheme, let host = url.host {
+                        pick.url = "\(scheme)://\(host)/"
+                    }
+                    return PickLog.encode(pick)
+                }.map { String(decoding: $0, as: UTF8.self) }.joined() }),
+        ]
+        for (name, rewrite) in broken {
+            reset()
+            let threw = (try? PickLog.minimise(log, rewrite: rewrite)) == nil
+            check("a rewrite that \(name) throws, puts the old log back and keeps the backup",
+                  threw && contents(log) == original && backups().count == 1 && contents(backups()[0]) == original)
+        }
+
+        // The rewrite as it ships: checked, then its backup goes.
+        reset()
+        let changed = (try? PickLog.minimise(log)) == true
+        let rewritten = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+        check("the rewrite checks out and removes its own backup",
+              changed && PickLog.keeps(text, in: rewritten) && backups().isEmpty)
+        check("no temporary file left", !files.fileExists(atPath: log.path + ".tmp"))
+        check("a second rewrite changes nothing",
+              (try? PickLog.minimise(log)) == false && contents(log) == Data(rewritten.utf8) && backups().isEmpty)
+
+        // Backups 0.5.0 left behind.
+        let other = folder.appendingPathComponent("config.json.bak-20261104")
+        try! Data("{}".utf8).write(to: other)
+        for stamp in ["20261109-193000", "20261110-080000"] {
+            try! original.write(to: folder.appendingPathComponent("picks.jsonl.bak-" + stamp))
+        }
+        check("with the log trimmed, 0.5.0's backups go and nothing else does",
+              PickLog.removeBackups(of: log) == 2 && backups().isEmpty && files.fileExists(atPath: other.path)
+              && contents(log) == Data(rewritten.utf8))
+        try! original.write(to: folder.appendingPathComponent("picks.jsonl.bak-20261109-193000"))
+        try! original.write(to: log)
+        check("with the log not yet trimmed, the backup stays",
+              PickLog.removeBackups(of: log) == 0 && backups().count == 1 && contents(log) == original)
+        try! files.removeItem(at: log)
+        check("with no log, the backup stays", PickLog.removeBackups(of: log) == 0 && backups().count == 1)
+        return rewritten
+    }
+
     /// A real log, as a 0.4.0 or 0.5.0 build wrote it, against the one-time rewrite. Works on a
     /// copy in a temporary folder: the rewrite must keep every opened pick, give each the same
     /// clues, keep the model's guesses, back the old log up, and be a no-op the second time.
@@ -197,30 +278,14 @@ enum ModelCheck {
             print("cannot read \(path)")
             return false
         }
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("model-check-\(ProcessInfo.processInfo.processIdentifier)")
-        try? FileManager.default.removeItem(at: folder)
-        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let copy = folder.appendingPathComponent("picks.jsonl")
-        try! original.write(to: copy)
-
         let lines = text.split(separator: "\n")
         let before = PickLog.read(text)
         print("\(lines.count) lines, \(before.count) read as picks that opened")
 
-        let backup: URL?
-        do { backup = try PickLog.minimise(copy) } catch {
-            check("rewrite: \(error)", false)
-            return false
-        }
-        let rewritten = (try? String(contentsOf: copy, encoding: .utf8)) ?? ""
+        let rewritten = rewritePaths(original, check)
         let after = PickLog.read(rewritten)
-        check("backup holds the old log byte for byte",
-              backup.flatMap { try? Data(contentsOf: $0) } == original || (backup == nil && rewritten == text))
         check("same number of picks: \(before.count) before, \(after.count) after, \(rewritten.split(separator: "\n").count) lines",
               before.count == after.count && rewritten.split(separator: "\n").count == after.count)
-        check("no temporary file left", !FileManager.default.fileExists(atPath: copy.path + ".tmp"))
 
         let fields = rewritten.split(separator: "\n").compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
         check("every line holds time, url, source, target, via and nothing else",
@@ -238,7 +303,7 @@ enum ModelCheck {
         check("same clues for every line", zip(before, after).allSatisfy { a, b in
             let x = Clues(URL(string: a.url)!, source: a.source)
             let y = Clues(URL(string: b.url)!, source: b.source)
-            return x.features == y.features && x.places.map(\.key) == y.places.map(\.key) && x.places.map(\.level) == y.places.map(\.level)
+            return x == y
         })
 
         // The guess the panel would have made before each pick, from the picks before it, with
@@ -259,11 +324,6 @@ enum ModelCheck {
         }
         check("the model gives the same guesses, to the last digit, before and after", sameGuesses)
 
-        let again: URL?
-        do { again = try PickLog.minimise(copy) } catch { again = URL(fileURLWithPath: "/") }
-        let backups = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.filter { $0.contains(".bak-") } ?? []
-        check("a second run changes nothing and backs up nothing",
-              again == nil && (try? String(contentsOf: copy, encoding: .utf8)) == rewritten && backups.count <= 1)
         return ok
     }
 

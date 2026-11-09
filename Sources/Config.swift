@@ -145,13 +145,16 @@ enum Store {
 
     /// Logs from before 0.5.0 keep whole links, the guess and its confidence, and lines for
     /// links that never opened. Rewritten once to what this version keeps; until that
-    /// succeeds it is tried again on each launch, with the log left as it was.
+    /// succeeds it is tried again on each launch, with the log left as it was. Backups 0.5.0
+    /// left next to the log go on every launch where the log is already trimmed.
     static func minimiseLog() {
         let done = "PicksMinimised"
-        guard !UserDefaults.standard.bool(forKey: done) else { return }
         do {
-            try PickLog.minimise(picksURL)
-            UserDefaults.standard.set(true, forKey: done)
+            if !UserDefaults.standard.bool(forKey: done) {
+                try PickLog.minimise(picksURL)
+                UserDefaults.standard.set(true, forKey: done)
+            }
+            PickLog.removeBackups(of: picksURL)
         } catch {
             NSLog("Browser Picker could not rewrite %@: %@", picksURL.path, String(describing: error))
         }
