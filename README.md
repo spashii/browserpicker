@@ -16,7 +16,7 @@ brew trust spashii/browserpicker
 brew install --cask browserpicker
 ```
 
-Or download `BrowserPicker-<version>.zip` from the [latest release](https://apps.idea2prod.in/browserpicker/download), unzip and move `Browser Picker.app` to `/Applications`.
+Or download `BrowserPicker-<version>.zip` from the [latest release](https://github.com/spashii/browserpicker/releases/latest), unzip and move `Browser Picker.app` to `/Applications`.
 
 The app is signed with a Developer ID and notarized by Apple, so it opens on the first try. Open it once. It offers to make itself the default browser and lists everything it found. Requires macOS 13 or later.
 
@@ -34,7 +34,7 @@ Browser Picker learns which browser you pick for which links. For each link you 
 
 ## Updates
 
-Browser Picker checks for updates with [Sparkle](https://sparkle-project.org). It asks before it checks on its own, and Check for Updates in its window looks right away. Update checks and downloads go through apps.idea2prod.in, which counts them by app, version and country and never stores your IP address.
+Browser Picker checks for updates with [Sparkle](https://sparkle-project.org). It asks before it checks on its own, and Check for Updates in its window looks right away. The update server counts update checks by app, version and country and never stores your IP address.
 
 ## Configure
 
